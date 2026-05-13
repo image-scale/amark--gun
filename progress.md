@@ -13,3 +13,10 @@
 **Commit**: Add conflict resolution for concurrent writes using HAM algorithm
 **Acceptance**: 10/10 criteria met
 **Verification**: tests FAIL on previous state, PASS on current state
+
+## Round 3
+**Task**: Task 3 — Nested object writes and automatic reference following
+**Files created**: test/nesting.test.js (index.js modified)
+**Commit**: Add support for nested object writes and automatic reference following
+**Acceptance**: 9/9 criteria met
+**Verification**: tests FAIL on previous state, PASS on current state

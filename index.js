@@ -593,7 +593,140 @@ Gun.prototype.back = function (n) {
     }
     return chain;
   }
+  if (typeof n === 'string') {
+    var parts = n.split('.');
+    var at = this._;
+    while (at) {
+      var val = at;
+      var found = true;
+      for (var i = 0; i < parts.length; i++) {
+        val = val[parts[i]];
+        if (val === undefined) { found = false; break; }
+      }
+      if (found) return val;
+      at = at.back;
+    }
+    return undefined;
+  }
   return this;
+};
+
+Gun.prototype.set = function (item, cb) {
+  var gun = this;
+  var root = gun.back(-1);
+  var soul;
+
+  if (Gun.is(item)) {
+    var itemSoul = item._.soul || (item._.put && item._.put._ && item._.put._['#']);
+    if (itemSoul) {
+      var link = {};
+      link[itemSoul] = { '#': itemSoul };
+      gun.put(link, cb);
+      return item;
+    }
+  }
+
+  if (helpers.isPlain(item)) {
+    soul = helpers.randomId(7);
+    var ref = root.get(soul).put(item);
+    var link = {};
+    link[soul] = { '#': soul };
+    gun.put(link, cb);
+    return ref;
+  }
+
+  soul = helpers.randomId(7);
+  gun.get(soul).put(item, cb);
+  return gun.get(soul);
+};
+
+Gun.prototype.map = function (cb) {
+  var gun = this;
+  var cat = gun._;
+
+  if (typeof cb === 'function') {
+    var chain = Object.create(Gun.prototype);
+    chain._ = {
+      $: chain,
+      root: cat.root,
+      id: ++cat.root.id,
+      back: cat,
+      on: Emitter(),
+      next: {},
+      any: {},
+      echo: {},
+      get: '_map_transform'
+    };
+
+    gun.map().on(function (data, key) {
+      var result = cb(data, key);
+      if (result === undefined) return;
+      fireListeners(chain._, result, key);
+    });
+
+    return chain;
+  }
+
+  if (cat.each) return cat.each;
+
+  var mapChain = Object.create(Gun.prototype);
+  mapChain._ = {
+    $: mapChain,
+    root: cat.root,
+    id: ++cat.root.id,
+    back: cat,
+    on: Emitter(),
+    next: {},
+    any: {},
+    echo: {},
+    isMap: true,
+    get: '_map'
+  };
+
+  cat.each = mapChain;
+
+  var processSoul = function (soul) {
+    var node = cat.root.graph[soul];
+    if (!node) return;
+    var keys = Object.keys(node);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (key === '_') continue;
+      var val = node[key];
+      var link = Validator(val);
+      if (typeof link === 'string') {
+        var linkedNode = cat.root.graph[link];
+        if (linkedNode) {
+          fireListeners(mapChain._, linkedNode, key);
+        } else {
+          fireListeners(mapChain._, val, key);
+        }
+      } else {
+        fireListeners(mapChain._, val, key);
+      }
+    }
+  };
+
+  var orig = cat.any;
+  var mapId = helpers.randomId();
+  cat.any = cat.any || {};
+  cat.any[mapId] = {
+    fn: function (data, key) {
+      if (cat.soul && typeof data === 'object' && data !== null && data._) {
+        processSoul(cat.soul);
+      }
+    },
+    id: mapId
+  };
+
+  var soul = cat.soul;
+  if (soul && cat.root.graph[soul]) {
+    setTimeout(function () {
+      processSoul(soul);
+    }, 0);
+  }
+
+  return mapChain;
 };
 
 function createAsker() {

@@ -1,0 +1,511 @@
+'use strict';
+
+var helpers = require('./helpers');
+var Emitter = require('./emitter');
+var Clock = require('./clock');
+var Dedup = require('./dedup');
+var Validator = require('./validator');
+
+function Gun(opts) {
+  if (!(this instanceof Gun)) { return new Gun(opts); }
+  var at = {};
+  at.$ = this;
+  at.root = at;
+  at.graph = {};
+  at.next = {};
+  at.id = 1;
+  at.on = Emitter();
+  at.ask = createAsker();
+  at.dup = Dedup();
+  at.opt = {};
+  this._ = at;
+
+  setupRoot(at);
+
+  if (opts) { this.configure(opts); }
+}
+
+function setupRoot(at) {
+  at.on('in', function (msg) {
+    rootIn(at, msg);
+  });
+}
+
+function rootIn(root, msg) {
+  if (!msg) return;
+  if (!msg['#']) { msg['#'] = helpers.randomId(); }
+
+  if (root.dup.check(msg['#'])) { return; }
+  root.dup.track(msg['#']);
+
+  if (msg['@']) {
+    root.ask(msg['@'], msg);
+  }
+
+  if (msg.put) {
+    applyPut(root, msg);
+  }
+
+  if (msg.get) {
+    handleGet(root, msg);
+  }
+}
+
+function applyPut(root, msg) {
+  var incoming = msg.put;
+  if (!incoming) return;
+
+  var souls = Object.keys(incoming);
+  for (var s = 0; s < souls.length; s++) {
+    var soul = souls[s];
+    var node = incoming[soul];
+    if (!node || !node._) continue;
+
+    var nodeSoul = node._['#'];
+    var states = node._['>'];
+    if (!nodeSoul || !states) continue;
+
+    if (!root.graph[nodeSoul]) {
+      root.graph[nodeSoul] = { _: { '#': nodeSoul, '>': {} } };
+    }
+
+    var current = root.graph[nodeSoul];
+    var keys = Object.keys(node);
+    for (var j = 0; j < keys.length; j++) {
+      var key = keys[j];
+      if (key === '_') continue;
+
+      var inState = states[key];
+      if (inState === undefined) continue;
+
+      var curState = (current._['>'][key]) || 0;
+
+      if (inState >= curState) {
+        current[key] = node[key];
+        current._['>'][key] = inState;
+      }
+    }
+
+    notifyChains(root, nodeSoul, current, msg);
+  }
+
+  if (!msg['@']) {
+    var ack = { '@': msg['#'], ok: 1, '#': helpers.randomId() };
+    root.on.emit('in', ack);
+  }
+}
+
+function notifyChains(root, soul, node, msg) {
+  if (root.next && root.next[soul]) {
+    var chain = root.next[soul];
+    var notifyMsg = { put: node, get: soul, '#': msg['#'] + '|n' };
+    chainInput(notifyMsg, chain._);
+  }
+}
+
+function handleGet(root, msg) {
+  var lex = msg.get;
+  if (!lex) return;
+  var soul = lex['#'];
+  if (!soul) return;
+
+  var node = root.graph[soul];
+  var reply = { '@': msg['#'], '#': helpers.randomId() };
+  if (node) {
+    reply.put = node;
+  }
+  if (root.next && root.next[soul]) {
+    chainInput(reply, root.next[soul]._);
+  }
+}
+
+function chainInput(msg, cat) {
+  if (cat.soul) {
+    var node = msg.put;
+    if (node) {
+      cat.put = node;
+      fireListeners(cat, node, cat.soul);
+
+      if (cat.next) {
+        var keys = Object.keys(cat.next);
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
+          var child = cat.next[key]._;
+          if (node[key] !== undefined) {
+            var childVal = node[key];
+            var link = Validator(childVal);
+            if (typeof link === 'string') {
+              followLink(child, link);
+            } else {
+              child.put = childVal;
+              fireListeners(child, childVal, key);
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function followLink(cat, soul) {
+  var root = cat.root;
+  cat.link = soul;
+  var linked = root.graph[soul];
+  if (linked) {
+    cat.put = linked;
+    fireListeners(cat, linked, cat.get || cat.has);
+    if (cat.next) {
+      var keys = Object.keys(cat.next);
+      for (var i = 0; i < keys.length; i++) {
+        var childCat = cat.next[keys[i]]._;
+        if (linked[keys[i]] !== undefined) {
+          childCat.put = linked[keys[i]];
+          fireListeners(childCat, linked[keys[i]], keys[i]);
+        }
+      }
+    }
+  }
+}
+
+function fireListeners(cat, data, key) {
+  if (!cat.any) return;
+  var ids = Object.keys(cat.any);
+  for (var i = 0; i < ids.length; i++) {
+    var listener = cat.any[ids[i]];
+    if (listener && listener.fn) {
+      try {
+        listener.fn.call(cat.$, data, key);
+      } catch (e) {}
+      if (listener.once) {
+        delete cat.any[ids[i]];
+      }
+    }
+  }
+}
+
+function registerListener(cat, cb, opts) {
+  opts = opts || {};
+  var id = helpers.randomId();
+  cat.any = cat.any || {};
+  cat.any[id] = {
+    fn: cb,
+    once: opts.once || false,
+    id: id
+  };
+
+  if (cat.put !== undefined) {
+    var key = cat.has || cat.soul || cat.get;
+    try {
+      cb.call(cat.$, cat.put, key);
+    } catch (e) {}
+    if (opts.once) {
+      delete cat.any[id];
+    }
+  } else {
+    requestData(cat);
+  }
+
+  return cat.$;
+}
+
+function requestData(cat) {
+  var root = cat.root;
+  var soul = cat.soul;
+  if (!soul && cat.back && cat.back.soul) {
+    soul = cat.back.soul;
+  }
+  if (soul) {
+    var node = root.graph[soul];
+    if (node && cat.soul) {
+      cat.put = node;
+      fireListeners(cat, node, cat.soul);
+    } else if (node && cat.has && node[cat.has] !== undefined) {
+      cat.put = node[cat.has];
+      fireListeners(cat, node[cat.has], cat.has);
+    }
+  }
+}
+
+Gun.is = function (v) {
+  return !!(v && v instanceof Gun);
+};
+
+Gun.valid = Validator;
+
+Gun.on = Emitter;
+
+Gun.prototype.configure = function (opts) {
+  if (typeof opts === 'string') {
+    opts = { peers: [opts] };
+  }
+  if (Array.isArray(opts)) {
+    opts = { peers: opts };
+  }
+  var o = this._.opt;
+  if (opts && opts.peers) {
+    o.peers = o.peers || {};
+    var peerList = Array.isArray(opts.peers) ? opts.peers : [opts.peers];
+    for (var i = 0; i < peerList.length; i++) {
+      if (typeof peerList[i] === 'string') {
+        o.peers[peerList[i]] = { url: peerList[i] };
+      }
+    }
+  }
+  if (opts) helpers.mixin(o, opts, ['peers']);
+  this._.on.emit('opt', this._);
+  return this;
+};
+
+Gun.prototype.get = function (key, cb, opts) {
+  var cat = this._;
+  var root = cat.root;
+  if (typeof key === 'function') {
+    return registerListener(cat, key, cb || opts);
+  }
+  if (typeof key !== 'string') { return this; }
+
+  var chain;
+  if (cat.next && cat.next[key]) {
+    chain = cat.next[key];
+  } else {
+    chain = Object.create(Gun.prototype);
+    var childAt = {
+      $: chain,
+      root: root,
+      id: ++root.id,
+      back: cat,
+      on: Emitter(),
+      next: {},
+      ask: {},
+      echo: {},
+      any: {},
+      get: key
+    };
+    if (cat === root) {
+      childAt.soul = key;
+    } else {
+      childAt.has = key;
+    }
+    chain._ = childAt;
+    cat.next = cat.next || {};
+    cat.next[key] = chain;
+
+    if (childAt.soul) {
+      root.next = root.next || {};
+      root.next[key] = chain;
+    }
+  }
+
+  if (typeof cb === 'function') {
+    return chain.get(cb, opts);
+  }
+  return chain;
+};
+
+Gun.prototype.put = function (data, cb, opts) {
+  var cat = this._;
+  var root = cat.root;
+  opts = opts || {};
+
+  var soul = resolveSoulPath(cat);
+  if (!soul) {
+    soul = helpers.randomId();
+  }
+
+  var now = Clock();
+  var graph = {};
+
+  if (helpers.isPlain(data)) {
+    var node = { _: { '#': soul, '>': {} } };
+    var keys = Object.keys(data);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      if (k === '_') continue;
+      var v = data[k];
+      var validated = Validator(v);
+      if (validated === false) {
+        if (helpers.isPlain(v)) {
+          var childSoul = soul + '/' + k;
+          node._['>'][k] = now;
+          node[k] = { '#': childSoul };
+          buildNestedGraph(graph, childSoul, v, now);
+        }
+        continue;
+      }
+      node._['>'][k] = now;
+      node[k] = v;
+    }
+    graph[soul] = node;
+  } else {
+    var validated = Validator(data);
+    if (validated !== false) {
+      if (cat.has) {
+        var parentSoul = resolveSoulPath(cat.back);
+        if (parentSoul) {
+          var parentNode = { _: { '#': parentSoul, '>': {} } };
+          parentNode._['>'][cat.has] = now;
+          parentNode[cat.has] = data;
+          graph[parentSoul] = parentNode;
+          ensureAncestorNodes(graph, cat.back, now);
+        }
+      } else {
+        var node = { _: { '#': soul, '>': {} } };
+        graph[soul] = node;
+      }
+    } else if (typeof cb === 'function') {
+      cb({ err: 'Invalid value' });
+      return this;
+    }
+  }
+
+  if (cat.has && helpers.isPlain(data)) {
+    ensureAncestorNodes(graph, cat, now);
+  }
+
+  var msgId = helpers.randomId();
+  var msg = { put: graph, '#': msgId };
+  if (typeof cb === 'function') {
+    root.ask(function () { cb({ ok: 1 }); }, msgId);
+  }
+
+  if (opts.turn) {
+    opts.turn(function () {
+      root.on.emit('in', msg);
+    });
+  } else {
+    setTimeout(function () {
+      root.on.emit('in', msg);
+    }, 0);
+  }
+
+  return this;
+};
+
+function ensureAncestorNodes(graph, cat, now) {
+  var at = cat;
+  while (at.back && at.has) {
+    var parentSoul = resolveSoulPath(at.back);
+    var childSoul = resolveSoulPath(at);
+    if (parentSoul && childSoul && !graph[parentSoul]) {
+      var node = { _: { '#': parentSoul, '>': {} } };
+      node._['>'][at.has] = now;
+      node[at.has] = { '#': childSoul };
+      graph[parentSoul] = node;
+    }
+    at = at.back;
+  }
+}
+
+function resolveSoulPath(cat) {
+  if (!cat) return null;
+  if (cat.soul) return cat.soul;
+  if (!cat.back) return null;
+  var parentPath = resolveSoulPath(cat.back);
+  if (parentPath && cat.has) {
+    return parentPath + '/' + cat.has;
+  }
+  if (cat.has) return cat.has;
+  return null;
+}
+
+function buildNestedGraph(graph, soul, data, now) {
+  var node = { _: { '#': soul, '>': {} } };
+  var keys = Object.keys(data);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (k === '_') continue;
+    var v = data[k];
+    var validated = Validator(v);
+    if (validated === false) {
+      if (helpers.isPlain(v)) {
+        var childSoul = soul + '/' + k;
+        node._['>'][k] = now;
+        node[k] = { '#': childSoul };
+        buildNestedGraph(graph, childSoul, v, now);
+      }
+      continue;
+    }
+    node._['>'][k] = now;
+    node[k] = v;
+  }
+  graph[soul] = node;
+}
+
+Gun.prototype.on = function (cb, opts) {
+  if (typeof cb === 'string') {
+    return this._.on(cb, opts);
+  }
+  opts = opts || {};
+  opts.stream = true;
+  return this.get(cb, opts);
+};
+
+Gun.prototype.once = function (cb, opts) {
+  opts = opts || {};
+  opts.once = true;
+  return this.get(cb, opts);
+};
+
+Gun.prototype.off = function () {
+  var cat = this._;
+  if (cat.next) {
+    var keys = Object.keys(cat.next);
+    for (var i = 0; i < keys.length; i++) {
+      if (cat.next[keys[i]] && cat.next[keys[i]].off) {
+        cat.next[keys[i]].off();
+      }
+    }
+  }
+  cat.any = {};
+  cat.ask = {};
+  if (cat.on && cat.on.clear) cat.on.clear();
+  return this;
+};
+
+Gun.prototype.back = function (n) {
+  if (n === undefined || n === 1) {
+    var b = this._.back;
+    return b ? b.$ : this;
+  }
+  if (n === -1 || n === Infinity) {
+    return this._.root.$;
+  }
+  if (typeof n === 'number' && n > 1) {
+    var chain = this;
+    while (n-- > 0 && chain._.back) {
+      chain = chain._.back.$;
+    }
+    return chain;
+  }
+  return this;
+};
+
+function createAsker() {
+  var pending = {};
+  var asker = function (cb, id) {
+    if (typeof cb === 'function') {
+      id = id || helpers.randomId();
+      pending[id] = { fn: cb, t: setTimeout(function () { delete pending[id]; }, 9000) };
+      return id;
+    }
+    if (typeof cb === 'string') {
+      if (pending[cb]) {
+        var entry = pending[cb];
+        clearTimeout(entry.t);
+        delete pending[cb];
+        if (entry.fn) entry.fn(id);
+        return true;
+      }
+    }
+    return false;
+  };
+  return asker;
+}
+
+Gun.statedisk = function (data, soul, cb) {
+  var gun = Gun();
+  gun.get(soul).put(data, cb, { turn: function (fn) { fn(); } });
+  return gun;
+};
+
+module.exports = Gun;

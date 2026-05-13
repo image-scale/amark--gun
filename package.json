@@ -1,0 +1,16 @@
+{
+  "name": "gun",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha test/ --recursive --timeout 10000"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "A realtime, decentralized, offline-first graph data synchronization engine.",
+  "devDependencies": {
+    "mocha": "^10.2.0",
+    "expect.js": "^0.3.1"
+  }
+}

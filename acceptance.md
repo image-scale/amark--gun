@@ -1,25 +1,19 @@
 # Acceptance Criteria
 
 ## Task 1: Core graph database with chainable get/put/on/once API
+### Acceptance Criteria
+- [x] All 20 criteria met (see Round 1)
+
+## Task 2: HAM conflict resolution and graph merging
 
 ### Acceptance Criteria
-- [ ] Creating a database instance with `DB()` or `new DB()` returns a working instance
-- [ ] `DB.is(instance)` returns true for DB instances, false for everything else
-- [ ] `DB.valid(val)` returns true for valid values (null, string, boolean, finite number), returns the soul string for soul references `{'#': 'soul'}`, returns false for invalid values (undefined, arrays, objects, functions, NaN, Infinity)
-- [ ] `db.get('key')` returns a chainable reference to a node in the graph
-- [ ] `db.get('key').get('prop')` chains to navigate deeper into the graph
-- [ ] `db.get('key').put({name: 'Alice', age: 30})` writes data to the graph
-- [ ] `db.get('key').put(data, cb)` calls callback with ack when write completes
-- [ ] `db.get('key').on(cb)` subscribes to changes, callback fires on every update with `(data, key)`
-- [ ] `db.get('key').once(cb)` reads data once and calls callback with `(data, key)` 
-- [ ] `db.get('key').off()` unsubscribes and cleans up listeners
-- [ ] Data written with `.put()` is readable via `.on()` and `.once()`
-- [ ] `.on()` fires again when data is updated
-- [ ] Graph stores data as nodes with soul identity `{'_': {'#': soul, '>': {key: state}}}`
-- [ ] State vector clocks are monotonically increasing timestamps
-- [ ] The internal event emitter supports subscribe, unsubscribe, and event propagation
-- [ ] String.random() generates random alphanumeric strings of configurable length
-- [ ] Object.plain() correctly identifies plain objects vs arrays, dates, functions, etc
-- [ ] Object.empty() checks if an object has no own properties, with optional exclusion list
-- [ ] Deduplication prevents processing the same message twice
-- [ ] `db.get('a').get('b').put('value')` generates predictable soul paths like 'a/b'
+- [ ] When two writes to the same key have different state timestamps, the one with the higher state wins
+- [ ] When two writes have the same state timestamp, the one with the larger value (by JSON string comparison) wins
+- [ ] When an incoming state is older than the current state for a key, it is discarded (no change to graph)
+- [ ] When an incoming state is newer than the current state, the value is accepted and the graph updates
+- [ ] Disjoint keys (different keys on the same node) merge independently without overwriting each other
+- [ ] A mutation (changing an existing key's value with a newer state) correctly updates the stored value
+- [ ] Multi-node graph merges (multiple nodes in a single put) work correctly
+- [ ] HAM can be called directly with current state, incoming state, current value, incoming value and returns {converge, current, incoming, defer, err} indicating the resolution
+- [ ] Clock state timestamps are used automatically when calling .put()
+- [ ] Future-dated states with timestamps beyond current time are deferred and applied later

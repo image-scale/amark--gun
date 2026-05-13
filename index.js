@@ -5,6 +5,7 @@ var Emitter = require('./emitter');
 var Clock = require('./clock');
 var Dedup = require('./dedup');
 var Validator = require('./validator');
+var HAM = require('./ham');
 
 function Gun(opts) {
   if (!(this instanceof Gun)) { return new Gun(opts); }
@@ -55,6 +56,8 @@ function applyPut(root, msg) {
   var incoming = msg.put;
   if (!incoming) return;
 
+  var now = Clock();
+  var changed = false;
   var souls = Object.keys(incoming);
   for (var s = 0; s < souls.length; s++) {
     var soul = souls[s];
@@ -71,6 +74,7 @@ function applyPut(root, msg) {
 
     var current = root.graph[nodeSoul];
     var keys = Object.keys(node);
+    var nodeChanged = false;
     for (var j = 0; j < keys.length; j++) {
       var key = keys[j];
       if (key === '_') continue;
@@ -79,14 +83,44 @@ function applyPut(root, msg) {
       if (inState === undefined) continue;
 
       var curState = (current._['>'][key]) || 0;
+      var curVal = current[key];
+      var inVal = node[key];
 
-      if (inState >= curState) {
-        current[key] = node[key];
+      var resolution = HAM(now, inState, curState, inVal, curVal);
+
+      if (resolution.defer) {
+        (function(val, k, s, st, m) {
+          var delay = st - Clock();
+          if (delay > 2147483647) delay = 2147483647;
+          if (delay < 1) delay = 1;
+          setTimeout(function() {
+            var graph = {};
+            var deferNode = { _: { '#': s, '>': {} } };
+            deferNode._['>'][k] = st;
+            deferNode[k] = val;
+            graph[s] = deferNode;
+            var deferMsg = { put: graph, '#': helpers.randomId() };
+            root.on.emit('in', deferMsg);
+          }, delay);
+        })(inVal, key, nodeSoul, inState, msg);
+        continue;
+      }
+
+      if (resolution.historical || resolution.current) {
+        continue;
+      }
+
+      if (resolution.incoming) {
+        current[key] = inVal;
         current._['>'][key] = inState;
+        nodeChanged = true;
       }
     }
 
-    notifyChains(root, nodeSoul, current, msg);
+    if (nodeChanged) {
+      changed = true;
+      notifyChains(root, nodeSoul, current, msg);
+    }
   }
 
   if (!msg['@']) {
@@ -233,6 +267,8 @@ Gun.is = function (v) {
 Gun.valid = Validator;
 
 Gun.on = Emitter;
+
+Gun.HAM = HAM;
 
 Gun.prototype.configure = function (opts) {
   if (typeof opts === 'string') {

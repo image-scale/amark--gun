@@ -7,6 +7,7 @@ var Dedup = require('./dedup');
 var Validator = require('./validator');
 var HAM = require('./ham');
 var Mesh = require('./mesh');
+var Storage = require('./storage');
 
 function Gun(opts) {
   if (!(this instanceof Gun)) { return new Gun(opts); }
@@ -353,6 +354,8 @@ Gun.HAM = HAM;
 
 Gun.Mesh = Mesh;
 
+Gun.Storage = Storage;
+
 Gun.prototype.configure = function (opts) {
   if (typeof opts === 'string') {
     opts = { peers: [opts] };
@@ -371,6 +374,9 @@ Gun.prototype.configure = function (opts) {
     }
   }
   if (opts) helpers.mixin(o, opts, ['peers']);
+  if (opts && opts.file && !this._.store) {
+    Storage(this._, { file: opts.file, batch: opts.batch });
+  }
   this._.on.emit('opt', this._);
   return this;
 };

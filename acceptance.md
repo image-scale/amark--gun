@@ -30,3 +30,18 @@
 - [x] The mesh tracks how many peers are connected via `mesh.near`
 - [x] Outgoing messages are forwarded to all peers via the mesh when the gun instance emits on the 'out' channel
 - [x] Existing tests continue to pass (no regressions)
+
+## Task 6: Local storage persistence
+
+### Acceptance Criteria
+- [x] A storage module can be created with a configurable file path for persisting data
+- [x] When data is written via `gun.put()`, it is persisted to disk
+- [x] When a new Gun instance is created with the same storage path, previously written data is available
+- [x] Write batching: rapid successive writes are batched and flushed together after a configurable delay
+- [x] The storage adapter correctly serializes and deserializes the full graph (nodes with souls, states, and values)
+- [x] Reading data from storage returns it via the gun event system so listeners receive it
+- [x] The adapter handles `get` requests by looking up data from the persisted graph
+- [x] The adapter handles `put` requests by merging data into the persisted graph
+- [x] The storage file uses JSON format for portability
+- [x] The adapter works when no storage file exists yet (fresh start)
+- [x] Existing tests continue to pass (no regressions)

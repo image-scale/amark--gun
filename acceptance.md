@@ -13,15 +13,20 @@
 - [x] All 9 criteria met (see Round 3)
 
 ## Task 4: Set collections and map iteration
+### Acceptance Criteria
+- [x] All 10 criteria met (see Round 4)
+
+## Task 5: Mesh networking and peer-to-peer sync
 
 ### Acceptance Criteria
-- [ ] `.set(plainObj)` adds an item to an unordered collection by generating a UUID soul, storing the object at that soul, and linking it from the parent node
-- [ ] `.set(gunNode)` links an existing node into the collection by its soul
-- [ ] Each `.set()` call produces a unique entry in the parent node
-- [ ] `.set()` returns the item chain for further chaining
-- [ ] `.map()` without a callback creates an "each" chain that iterates over all properties of a node
-- [ ] `.map().on(cb)` fires callback for each property of a node with `(value, key)`
-- [ ] `.map()` emits the full node data for properties that are soul references
-- [ ] `.map().on()` fires for existing properties and also for newly added ones
-- [ ] `.map(transformFn)` applies a transform function to each value before passing downstream
-- [ ] Existing tests continue to pass (no regressions)
+- [x] The mesh module can be created with a reference to a root gun instance
+- [x] `mesh.hear(rawJSON, peer)` processes incoming JSON messages and routes them to the gun instance
+- [x] `mesh.say(msg, peer)` serializes messages to JSON and sends them to a specific peer or broadcasts to all connected peers
+- [x] `mesh.hi(peer)` registers a new peer, assigns an ID, and triggers a 'hi' event
+- [x] `mesh.bye(peer)` removes a peer and triggers a 'bye' event
+- [x] Messages are batched by default and flushed after a configurable gap period
+- [x] The mesh correctly deduplicates messages to avoid sending the same data back to the sender
+- [x] A peer identity exchange (handshake) occurs when peers connect
+- [x] The mesh tracks how many peers are connected via `mesh.near`
+- [x] Outgoing messages are forwarded to all peers via the mesh when the gun instance emits on the 'out' channel
+- [x] Existing tests continue to pass (no regressions)

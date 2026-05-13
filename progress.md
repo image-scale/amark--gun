@@ -20,3 +20,17 @@
 **Commit**: Add support for nested object writes and automatic reference following
 **Acceptance**: 9/9 criteria met
 **Verification**: tests FAIL on previous state, PASS on current state
+
+## Round 4
+**Task**: Task 4 — Set collections and map iteration
+**Files created**: test/set-map.test.js (index.js modified)
+**Commit**: Add set collections and map iteration to the graph database
+**Acceptance**: 10/10 criteria met
+**Verification**: tests FAIL on previous state, PASS on current state
+
+## Round 5
+**Task**: Task 5 — Mesh networking and peer-to-peer sync
+**Files created**: mesh.js, test/mesh.test.js (index.js modified)
+**Commit**: Add mesh networking for peer-to-peer data synchronization
+**Acceptance**: 11/11 criteria met
+**Verification**: tests FAIL on previous state (MODULE_NOT_FOUND without mesh.js), PASS on current state

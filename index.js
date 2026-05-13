@@ -6,6 +6,7 @@ var Clock = require('./clock');
 var Dedup = require('./dedup');
 var Validator = require('./validator');
 var HAM = require('./ham');
+var Mesh = require('./mesh');
 
 function Gun(opts) {
   if (!(this instanceof Gun)) { return new Gun(opts); }
@@ -349,6 +350,8 @@ Gun.valid = Validator;
 Gun.on = Emitter;
 
 Gun.HAM = HAM;
+
+Gun.Mesh = Mesh;
 
 Gun.prototype.configure = function (opts) {
   if (typeof opts === 'string') {

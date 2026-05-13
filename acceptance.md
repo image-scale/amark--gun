@@ -5,15 +5,18 @@
 - [x] All 20 criteria met (see Round 1)
 
 ## Task 2: HAM conflict resolution and graph merging
+### Acceptance Criteria
+- [x] All 10 criteria met (see Round 2)
+
+## Task 3: Nested object writes and automatic reference following
 
 ### Acceptance Criteria
-- [ ] When two writes to the same key have different state timestamps, the one with the higher state wins
-- [ ] When two writes have the same state timestamp, the one with the larger value (by JSON string comparison) wins
-- [ ] When an incoming state is older than the current state for a key, it is discarded (no change to graph)
-- [ ] When an incoming state is newer than the current state, the value is accepted and the graph updates
-- [ ] Disjoint keys (different keys on the same node) merge independently without overwriting each other
-- [ ] A mutation (changing an existing key's value with a newer state) correctly updates the stored value
-- [ ] Multi-node graph merges (multiple nodes in a single put) work correctly
-- [ ] HAM can be called directly with current state, incoming state, current value, incoming value and returns {converge, current, incoming, defer, err} indicating the resolution
-- [ ] Clock state timestamps are used automatically when calling .put()
-- [ ] Future-dated states with timestamps beyond current time are deferred and applied later
+- [ ] When putting a nested object like `{car: {make: 'Toyota'}}`, inner objects are stored as separate graph nodes linked by soul references `{'#': 'soul'}`
+- [ ] `gun.get('alice').put({name: 'Alice', car: {make: 'Toyota', year: 2020}})` creates nodes for alice and alice/car, where alice.car is a soul reference
+- [ ] Chain traversal like `gun.get('alice').get('car').get('make').once(cb)` follows the soul reference transparently and returns 'Toyota'
+- [ ] When a reference target is updated (e.g., alice's car is changed), subscribers to the old chain see the new data
+- [ ] `gun.get('alice').get('car').on(cb)` fires with the car node data, following the reference
+- [ ] Multiple levels of nesting work: `{a: {b: {c: 'deep'}}}` creates separate nodes for each level
+- [ ] The `statedisk` helper writes data to a gun instance synchronously for testing
+- [ ] Circular references between nodes don't cause infinite loops
+- [ ] Existing tests continue to pass (no regressions)

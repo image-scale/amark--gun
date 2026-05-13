@@ -6,3 +6,10 @@
 **Commit**: Add a core graph database engine with a chainable API for reading and writing data
 **Acceptance**: 20/20 criteria met
 **Verification**: tests FAIL on previous state (patch cannot apply), PASS on current state
+
+## Round 2
+**Task**: Task 2 — HAM conflict resolution and graph merging
+**Files created**: ham.js, test/ham.test.js
+**Commit**: Add conflict resolution for concurrent writes using HAM algorithm
+**Acceptance**: 10/10 criteria met
+**Verification**: tests FAIL on previous state, PASS on current state

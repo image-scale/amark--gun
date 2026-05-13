@@ -134,6 +134,34 @@ function notifyChains(root, soul, node, msg) {
     var chain = root.next[soul];
     var notifyMsg = { put: node, get: soul, '#': msg['#'] + '|n' };
     chainInput(notifyMsg, chain._);
+
+    if (chain._.echo) {
+      var echoIds = Object.keys(chain._.echo);
+      for (var i = 0; i < echoIds.length; i++) {
+        var echoCat = chain._.echo[echoIds[i]];
+        if (echoCat) {
+          echoCat.put = node;
+          fireListeners(echoCat, node, echoCat.get || echoCat.has);
+          if (echoCat.next) {
+            var keys = Object.keys(echoCat.next);
+            for (var j = 0; j < keys.length; j++) {
+              var childKey = keys[j];
+              var childCat = echoCat.next[childKey]._;
+              if (node[childKey] !== undefined) {
+                var childVal = node[childKey];
+                var link = Validator(childVal);
+                if (typeof link === 'string') {
+                  followLink(childCat, link);
+                } else {
+                  childCat.put = childVal;
+                  fireListeners(childCat, childVal, childKey);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -191,14 +219,41 @@ function followLink(cat, soul) {
     if (cat.next) {
       var keys = Object.keys(cat.next);
       for (var i = 0; i < keys.length; i++) {
-        var childCat = cat.next[keys[i]]._;
-        if (linked[keys[i]] !== undefined) {
-          childCat.put = linked[keys[i]];
-          fireListeners(childCat, linked[keys[i]], keys[i]);
+        var childKey = keys[i];
+        var childCat = cat.next[childKey]._;
+        if (linked[childKey] !== undefined) {
+          var childVal = linked[childKey];
+          var childLink = Validator(childVal);
+          if (typeof childLink === 'string') {
+            followLink(childCat, childLink);
+          } else {
+            childCat.put = childVal;
+            fireListeners(childCat, childVal, childKey);
+          }
         }
       }
     }
   }
+
+  root.next = root.next || {};
+  if (!root.next[soul]) {
+    var linkedChain = Object.create(Gun.prototype);
+    var linkedAt = {
+      $: linkedChain,
+      root: root,
+      id: ++root.id,
+      on: Emitter(),
+      next: {},
+      any: {},
+      echo: {},
+      soul: soul,
+      get: soul
+    };
+    linkedChain._ = linkedAt;
+    root.next[soul] = linkedChain;
+  }
+  root.next[soul]._.echo = root.next[soul]._.echo || {};
+  root.next[soul]._.echo[cat.id] = cat;
 }
 
 function fireListeners(cat, data, key) {
@@ -244,18 +299,43 @@ function registerListener(cat, cb, opts) {
 
 function requestData(cat) {
   var root = cat.root;
-  var soul = cat.soul;
-  if (!soul && cat.back && cat.back.soul) {
-    soul = cat.back.soul;
-  }
-  if (soul) {
-    var node = root.graph[soul];
-    if (node && cat.soul) {
+
+  if (cat.soul) {
+    var node = root.graph[cat.soul];
+    if (node) {
       cat.put = node;
       fireListeners(cat, node, cat.soul);
-    } else if (node && cat.has && node[cat.has] !== undefined) {
-      cat.put = node[cat.has];
-      fireListeners(cat, node[cat.has], cat.has);
+    }
+    return;
+  }
+
+  if (cat.has && cat.back) {
+    resolvePropertyChain(cat);
+  }
+}
+
+function resolvePropertyChain(cat) {
+  var root = cat.root;
+  var parentCat = cat.back;
+  if (!parentCat) return;
+
+  var parentSoul = parentCat.soul || parentCat.link;
+  if (!parentSoul && parentCat.has) {
+    resolvePropertyChain(parentCat);
+    parentSoul = parentCat.link;
+  }
+
+  if (parentSoul) {
+    var parentNode = root.graph[parentSoul];
+    if (parentNode && parentNode[cat.has] !== undefined) {
+      var val = parentNode[cat.has];
+      var link = Validator(val);
+      if (typeof link === 'string') {
+        followLink(cat, link);
+      } else {
+        cat.put = val;
+        fireListeners(cat, val, cat.has);
+      }
     }
   }
 }
